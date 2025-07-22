@@ -2,9 +2,15 @@ const express = require("express");
 const app = express();
 const axios = require('axios');
 const { readPdfFromUrl } = require("./util");
-const { GoogleGenAI } = require("@google/genai");
-const ai = new GoogleGenAI({apiKey: "AIzaSyBIj2xZbDOv9bhDHcDcB93-_yn9Rn4K2AA"});
-
+require("dotenv").config();
+const openai = axios.create({
+    baseURL: "https://dev-api.healthrx.co.in/sp-gw/api/openai/v1",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.OPENAPI_KEY}`,
+    },
+    timeout: 30000, // 30s
+  });
 
 app.use(express.json())
 app.use(express.urlencoded({extended: true}))
@@ -14,7 +20,10 @@ app.get("/", (req, res)=>{
 })
 
 app.post("/hackrx/run", async (req, res)=>{
+
+    
     let {documents, questions} = req.body;
+    
     console.log(documents);
 
     try {
@@ -24,15 +33,10 @@ app.post("/hackrx/run", async (req, res)=>{
         const headers = {
             'Content-Type': 'application/json',
         };
-
         
-        for(let i =0;i<data.length;i+=50000) {
-            if(answers.length==questions.length)
-                break;
-            try {
-            const response = await ai.models.generateContent({
-                model: "gemini-2.5-flash",
-                contents: `You are a helpful and precise clerk assigned to read and answer questions from a given document.
+
+        const messages = [
+            { role: "system", content: `You are a helpful and precise clerk assigned to read and answer questions from a given document.
 
 You will receive:
 - A block of text (from a document)
@@ -46,21 +50,41 @@ Your job is to:
 5. Return the result in the following JSON format:
 
 {
-  "answers": [
-    { "ques": 1, "ans": "answer to question 1" },
-    { "ques": 2, "ans": "answer to question 2" },
-    ...
-  ]
+"answers": [
+{ "ques": 1, "ans": "answer to question 1" },
+{ "ques": 2, "ans": "answer to question 2" },
+...
+]
 }
 
-Do not include any text outside the JSON structure. if the question is an empty string return an empty string. Stay strictly within what the document provides. ${data.length>=i+50000?data.substring(i, i+50000):data.substring(i)} - ${questions}`,
-              });
+Do not include any text outside the JSON structure. if the question is an empty string return an empty string. Stay strictly within what the document provides. `},
+            { role: "user", content: `` }
+        ]
+        
+        for(let i =0;i<data.length;i+=50000) {
+
+            
+            if(answers.length==questions.length)
+                break;
+            try {
+                console.log("hitting gpt");
+                messages[1].content = `${data.length>=i+50000?data.substring(i, i+50000):data.substring(i)} - ${questions}`;
+                
+            const response = await openai.post("/chat/completions", {
+                    model: "gpt-4o",
+                    messages,
+                    temperature: 0,
+                    stop: null,
+                  });
+    
               await new Promise(resolve => setTimeout(resolve, 150));  
               
-              console.log(response.usageMetadata.totalTokenCount);
-              let geminiResponse = JSON.parse(response.text.replaceAll("`", "").replaceAll("json", ""));
+            console.log(response?.data?.choices);
+                
+              let geminiResponse = JSON.parse(response?.data?.choices[0]?.message?.content);
               console.log(geminiResponse);
-              
+            
+
               geminiResponse?.answers?.forEach((ans, i)=>{
                 if(ans?.ans!="Not available in document.") {
                     answers.splice(Number(ans.ques), 0, ans.ans);
@@ -71,8 +95,11 @@ Do not include any text outside the JSON structure. if the question is an empty 
                     
                 }
               })
-            } catch(err) {
+              console.log("hitting gpt");
 
+            } catch(err) {
+                console.log(err);
+                
             }
         }
     
