@@ -61,14 +61,14 @@ Do not include any text outside the JSON structure. if the question is an empty 
             { role: "user", content: `` }
         ]
         
-        for(let i =0;i<data.length;i+=50000) {
+        for(let i =0;i<data.length;i+=20000) {
 
             
             if(answers.length==questions.length)
                 break;
             try {
                 console.log("hitting gpt");
-                messages[1].content = `${data.length>=i+50000?data.substring(i, i+50000):data.substring(i)} - ${questions}`;
+                messages[1].content = `${data.length>=i+20000?data.substring(i, i+20000):data.substring(i)} - ${questions}`;
                 
             const response = await openai.post("/chat/completions", {
                     model: "gpt-4o",
